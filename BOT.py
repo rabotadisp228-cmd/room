@@ -58,7 +58,7 @@ ALLOWED_ORIGINS = [
     "http://127.0.0.1:5500", 
     "http://localhost:8080",
     "http://127.0.0.1:8080",
-    "https://roomix-production.up.railway.app"
+    "https://room-production-a3ca.up.railway.app"
 ]
 
 # CORS middleware
@@ -1437,7 +1437,7 @@ def save_application(user_id, username, first_name, time, experience):
 async def send_sse_command(user_id, action_type, payment_id=None):
     """Отправка команды через SSE сервер"""
     try:
-        server_url = "https://roomix-production.up.railway.app"
+        server_url = "https://room-production-a3ca.up.railway.app"
         
         response = requests.post(
             f"{server_url}/send_command",
@@ -1860,7 +1860,7 @@ async def handle_operator_message(message: types.Message, state: FSMContext):
             logger.info(f"🔍 Используем user_id для отправки: {final_user_id}")
             
             # Отправляем сообщение клиенту
-            server_url = "https://roomix-production.up.railway.app"
+            server_url = "https://room-production-a3ca.up.railway.app"
             try:
                 response = requests.post(
                     f"{server_url}/operator_reply",
@@ -2759,3 +2759,4 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
+
