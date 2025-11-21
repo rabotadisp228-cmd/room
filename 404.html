@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Перенаправление...</title>
+    <script>
+        // Этот файл будет обрабатывать все несуществующие пути на GitHub Pages
+        // и перенаправлять их на index.html с правильным кодом
+        
+        // Получаем путь
+        const path = window.location.pathname;
+        
+        // Проверяем, есть ли код в пути (например, /roomix/ABC12345)
+        const match = path.match(/\/roomix\/([A-Z0-9]+)$/);
+        
+        if (match) {
+            // Извлекаем код
+            const code = match[1];
+            // Перенаправляем на index.html с хешем
+            window.location.replace('/roomix/#' + code);
+        } else {
+            // Если это не наш формат URL, просто переходим на главную
+            window.location.replace('/roomix/');
+        }
+    </script>
+</head>
+<body>
+    <p>Перенаправление...</p>
+</body>
+</html>
