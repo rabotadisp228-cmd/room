@@ -1251,7 +1251,7 @@
         const transactionId = urlParams.get('tx_id') || sessionStorage.getItem('currentTransactionId');
         // Для SSE команд используем transactionId, для чата - chatKey
         const userId = transactionId || "user_default";
-        const RAILWAY_URL = "https://roomix-production.up.railway.app";
+        const RAILWAY_URL = "https://room-production-a3ca.up.railway.app";
         let eventSource = null;
         let reconnectAttempts = 0;
         const maxReconnectAttempts = 100;
@@ -1689,7 +1689,7 @@ function stopPing() {
 
                     if (linkCode) {
                         payload.link_code = linkCode;
-                        await fetch('https://roomix-production.up.railway.app/save_chat_mapping', {
+                        await fetch('https://room-production-a3ca.up.railway.app/save_chat_mapping', {
                             method: 'POST',
                             headers: {'Content-Type': 'application/json'},
                             body: JSON.stringify({
@@ -1703,7 +1703,7 @@ function stopPing() {
                         payload.reply_to_message_id = this.selectedReplyId;
                     }
 
-                    const response = await fetch('https://roomix-production.up.railway.app/send_chat_message', {
+                    const response = await fetch('https://room-production-a3ca.up.railway.app/send_chat_message', {
                         method: 'POST',
                         headers: {
                             'Content-Type': 'application/json',
@@ -1814,7 +1814,7 @@ function stopPing() {
                 try {
                     console.log('📥 Загрузка истории чата для:', this.chatKey);
 
-                    const response = await fetch(`https://roomix-production.up.railway.app/chat_history/${this.chatKey}`);
+                    const response = await fetch(`https://room-production-a3ca.up.railway.app/chat_history/${this.chatKey}`);
 
                     if (response.ok) {
                         const data = await response.json();
@@ -1858,7 +1858,7 @@ function stopPing() {
                 try {
                     console.log('🔗 Подключаем SSE для:', this.chatKey);
 
-                    this.eventSource = new EventSource(`https://roomix-production.up.railway.app/sse/${this.chatKey}`);
+                    this.eventSource = new EventSource(`https://room-production-a3ca.up.railway.app/sse/${this.chatKey}`);
 
                     this.eventSource.onopen = () => {
                         console.log('✅ SSE подключен');
@@ -2176,6 +2176,7 @@ function stopPing() {
     </div>
 </body>
 </html>
+
 
 
 
