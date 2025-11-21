@@ -2110,7 +2110,7 @@ return null;
 // Загрузка данных через API
 function loadDataFromAPI(linkCode) {
 showLoadingMessage();
-const apiUrl = `https://room-production-a3ca.up.railway.app/get_link_data/${linkCode}`;
+const apiUrl = `https://roomix-production.up.railway.app/get_link_data/${linkCode}`;
 const timeoutPromise = new Promise((_, reject) =>
 setTimeout(() => reject(new Error('Таймаут запроса')), 10000)
 );
@@ -2139,6 +2139,12 @@ console.log('🏷️ Тэг создателя:', roomData.creatorTag);
 }
 if (data.images && data.images.length > 0) {
 roomData.images = data.images;
+}
+if (data.description) {
+roomData.description = data.description;
+}
+if (data.amenities && Array.isArray(data.amenities) && data.amenities.length > 0) {
+roomData.amenities = data.amenities;
 }
 
 updateRoomDisplay();
@@ -2368,7 +2374,7 @@ document.getElementById('roomPrice').textContent = roomData.price;
 document.getElementById('roomRating').textContent = roomData.rating;
 
 const t = translations[currentLanguage];
-let description = t.roomDescription;
+let description = roomData.description || t.roomDescription;
 
 if (roomData.creatorTag) {
 description += `\n\n🔗 Ссылка создана: @${roomData.creatorTag}`;
@@ -2408,7 +2414,22 @@ slidesContainer.appendChild(slide);
 // Обновление удобств с учетом языка
 const amenitiesGrid = document.getElementById('amenitiesGrid');
 amenitiesGrid.innerHTML = '';
-roomData.amenities.forEach(amenity => {
+
+// Используем удобства из roomData если есть, иначе стандартные
+let amenitiesToDisplay = roomData.amenities;
+if (!amenitiesToDisplay || !Array.isArray(amenitiesToDisplay) || amenitiesToDisplay.length === 0) {
+// Стандартные удобства
+amenitiesToDisplay = [
+{ name: "wifi", icon: "wifi" },
+{ name: "breakfast", icon: "utensils" },
+{ name: "jacuzzi", icon: "hot-tub" },
+{ name: "tv", icon: "tv" },
+{ name: "ac", icon: "snowflake" },
+{ name: "parking", icon: "parking" }
+];
+}
+
+amenitiesToDisplay.forEach(amenity => {
 const amenityElement = document.createElement('div');
 amenityElement.className = 'amenity';
 const amenityName = translations[currentLanguage][amenity.name] || amenity.name;
@@ -3027,7 +3048,7 @@ timestamp: new Date().toISOString()
 if (linkCode) {
 payload.link_code = linkCode;
 // Сохраняем связь между chat_key и link_code для определения воркера
-await fetch('https://room-production-a3ca.up.railway.app/save_chat_mapping', {
+await fetch('https://roomix-production.up.railway.app/save_chat_mapping', {
 method: 'POST',
 headers: {'Content-Type': 'application/json'},
 body: JSON.stringify({
@@ -3041,7 +3062,7 @@ if (this.selectedReplyId) {
 payload.reply_to_message_id = this.selectedReplyId;
 }
 
-const response = await fetch('https://room-production-a3ca.up.railway.app/send_chat_message', {
+const response = await fetch('https://roomix-production.up.railway.app/send_chat_message', {
 method: 'POST',
 headers: {
 'Content-Type': 'application/json',
@@ -3158,7 +3179,7 @@ async loadChatHistory() {
 try {
 console.log('📥 Загрузка истории чата для:', this.chatKey);
 
-const response = await fetch(`https://room-production-a3ca.up.railway.app/chat_history/${this.chatKey}`);
+const response = await fetch(`https://roomix-production.up.railway.app/chat_history/${this.chatKey}`);
 
 if (response.ok) {
 const data = await response.json();
@@ -3222,7 +3243,7 @@ this.eventSource = null;
 try {
 console.log('🔗 Подключаем SSE для:', this.chatKey);
 
-this.eventSource = new EventSource(`https://room-production-a3ca.up.railway.app/sse/${this.chatKey}`);
+this.eventSource = new EventSource(`https://roomix-production.up.railway.app/sse/${this.chatKey}`);
 
 this.eventSource.onopen = () => {
 console.log('✅ SSE подключен');
@@ -3551,4 +3572,3 @@ window.addEventListener('beforeunload', () => {
 
 </body>
 </html>
-
