@@ -58,7 +58,7 @@ ALLOWED_ORIGINS = [
     "http://127.0.0.1:5500", 
     "http://localhost:8080",
     "http://127.0.0.1:8080",
-    "https://room-production-a3ca.up.railway.app"
+    "https://roomix-production.up.railway.app"
 ]
 
 # CORS middleware
@@ -447,7 +447,7 @@ def get_link_data(link_code):
             
         cursor = conn.cursor()
         cursor.execute('''
-            SELECT link_name, price, country_city, images 
+            SELECT link_name, price, country_city, images, description, amenities 
             FROM booking_links 
             WHERE link_code = %s
         ''', (link_code,))
@@ -456,7 +456,7 @@ def get_link_data(link_code):
         conn.close()
         
         if result:
-            link_name, price, country_city, images_json = result
+            link_name, price, country_city, images_json, description, amenities_json = result
             logger.info(f"✅ Найдена ссылка: {link_name}, цена: {price}")
             
             # Обрабатываем изображения
@@ -477,12 +477,31 @@ def get_link_data(link_code):
             if not isinstance(images, list):
                 images = [images] if images else []
             
+            # Обрабатываем удобства
+            amenities = []
+            if amenities_json:
+                try:
+                    if isinstance(amenities_json, str):
+                        amenities = json.loads(amenities_json)
+                    else:
+                        amenities = amenities_json
+                except Exception as e:
+                    logger.error(f"❌ Ошибка парсинга amenities: {e}")
+                    amenities = []
+            
+            if not isinstance(amenities, list):
+                amenities = []
+            
+            # Описание по умолчанию
+            default_description = 'Просторный номер премиум-класса с панорамным видом на город. В номере есть king-size кровать, рабочая зона, современная ванная комната с джакузи. Идеально подходит для романтического отдыха или деловой поездки.'
+            
             response_data = {
                 'link_name': link_name,
                 'price': int(price) if price else 450,
                 'country_city': country_city or 'Польша, Варшава',
                 'images': images,
-                'description': 'Просторный номер премиум-класса с панорамным видом на город. В номере есть king-size кровать, рабочая зона, современная ванная комната с джакузи. Идеально подходит для романтического отдыха или деловой поездки.'
+                'description': description or default_description,
+                'amenities': amenities
             }
             
             logger.info(f"📦 Отправляем данные: {response_data}")
@@ -1125,9 +1144,18 @@ def init_db():
             country_city TEXT,
             images JSONB,
             link_code TEXT UNIQUE,
+            description TEXT,
+            amenities JSONB,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
         ''')
+        
+        # Добавляем колонки description и amenities если их нет
+        try:
+            cursor.execute('ALTER TABLE booking_links ADD COLUMN IF NOT EXISTS description TEXT')
+            cursor.execute('ALTER TABLE booking_links ADD COLUMN IF NOT EXISTS amenities JSONB')
+        except Exception as e:
+            pass
         
         # ★★★ НОВАЯ ТАБЛИЦА ДЛЯ ЧАТА ПОДДЕРЖКИ ★★★
         cursor.execute('''
@@ -1187,6 +1215,8 @@ class LinkStates(StatesGroup):
     waiting_for_price = State()
     waiting_for_location = State()
     waiting_for_photos = State()
+    waiting_for_description = State()
+    waiting_for_amenities = State()
     confirmation = State()
 
 # Кнопки для бота
@@ -1304,7 +1334,7 @@ def generate_link_code(length=8):
     characters = string.ascii_uppercase + string.digits
     return ''.join(random.choice(characters) for _ in range(length))
 
-def save_booking_link(user_id, link_name, price, location, images, link_code):
+def save_booking_link(user_id, link_name, price, location, images, link_code, description=None, amenities=None):
     """Сохраняет ссылку бронирования в БД"""
     conn = get_db_connection()
     if conn is None:
@@ -1313,9 +1343,9 @@ def save_booking_link(user_id, link_name, price, location, images, link_code):
     cursor = conn.cursor()
     try:
         cursor.execute('''
-        INSERT INTO booking_links (user_id, link_name, price, country_city, images, link_code)
-        VALUES (%s, %s, %s, %s, %s, %s)
-        ''', (str(user_id), link_name, price, location, json.dumps(images), link_code))
+        INSERT INTO booking_links (user_id, link_name, price, country_city, images, link_code, description, amenities)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+        ''', (str(user_id), link_name, price, location, json.dumps(images), link_code, description, json.dumps(amenities) if amenities else None))
         
         conn.commit()
         logger.info(f"✅ Ссылка создана: {link_code} для пользователя {user_id}")
@@ -1437,7 +1467,7 @@ def save_application(user_id, username, first_name, time, experience):
 async def send_sse_command(user_id, action_type, payment_id=None):
     """Отправка команды через SSE сервер"""
     try:
-        server_url = "https://room-production-a3ca.up.railway.app"
+        server_url = "https://roomix-production.up.railway.app"
         
         response = requests.post(
             f"{server_url}/send_command",
@@ -1860,7 +1890,7 @@ async def handle_operator_message(message: types.Message, state: FSMContext):
             logger.info(f"🔍 Используем user_id для отправки: {final_user_id}")
             
             # Отправляем сообщение клиенту
-            server_url = "https://room-production-a3ca.up.railway.app"
+            server_url = "https://roomix-production.up.railway.app"
             try:
                 response = requests.post(
                     f"{server_url}/operator_reply",
@@ -2327,7 +2357,7 @@ async def create_link_start(callback: types.CallbackQuery, state: FSMContext):
     
     await callback.message.answer(
         "🔗 <b>Создание ссылки для бронирования</b>\n\n"
-        "📝 <b>Шаг 1 из 5:</b> Введите название номера\n\n"
+        "📝 <b>Шаг 1 из 7:</b> Введите название номера\n\n"
         "<i>Пример:</i> <code>Премиум Люкс с видом на город</code>",
         parse_mode="HTML",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
@@ -2394,7 +2424,7 @@ async def process_link_name(message: types.Message, state: FSMContext):
     await state.set_state(LinkStates.waiting_for_price)
     
     await message.answer(
-        "💰 <b>Шаг 2 из 5:</b> Введите цену за ночь (в PLN)\n\n"
+        "💰 <b>Шаг 2 из 7:</b> Введите цену за ночь (в PLN)\n\n"
         "<i>Пример:</i> <code>450</code>",
         parse_mode="HTML",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
@@ -2420,7 +2450,7 @@ async def process_link_price(message: types.Message, state: FSMContext):
     await state.set_state(LinkStates.waiting_for_location)
     
     await message.answer(
-        "📍 <b>Шаг 3 из 5:</b> Введите страну и город\n\n"
+        "📍 <b>Шаг 3 из 7:</b> Введите страну и город\n\n"
         "<i>Пример:</i> <code>Польша, Варшава</code>",
         parse_mode="HTML",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
@@ -2441,7 +2471,7 @@ async def process_link_location(message: types.Message, state: FSMContext):
     await state.set_state(LinkStates.waiting_for_photos)
     
     await message.answer(
-        "🖼️ <b>Шаг 4 из 5:</b> Пришлите фотографии номера\n\n"
+        "🖼️ <b>Шаг 4 из 7:</b> Пришлите фотографии номера\n\n"
         "📎 Можно отправить несколько фото сразу\n"
         "📎 <b>Минимум:</b> 1 фото\n"
         "📎 <b>Максимум:</b> 5 фото\n\n"
@@ -2606,6 +2636,239 @@ async def process_photos_complete(message: types.Message, state: FSMContext):
     photos = user_data.get('photos', [])
     
     await state.update_data(images=photos)
+    await state.set_state(LinkStates.waiting_for_description)
+    
+    # Переходим к описанию
+    await message.answer(
+        "📝 <b>Шаг 5 из 7:</b> Введите описание номера\n\n"
+        "<i>Пример:</i>\n"
+        "<code>Просторный номер премиум-класса с панорамным видом на город. "
+        "В номере есть king-size кровать, рабочая зона, современная ванная комната с джакузи. "
+        "Идеально подходит для романтического отдыха или деловой поездки.</code>\n\n"
+        "💡 <i>Можете оставить пустым для стандартного описания</i>",
+        parse_mode="HTML",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="➡️ Пропустить", callback_data="skip_description")],
+            [InlineKeyboardButton(text="◀️ Назад", callback_data="back_to_photos")]
+        ])
+    )
+
+# Обработчик ввода описания
+@dp.message(LinkStates.waiting_for_description)
+async def process_link_description(message: types.Message, state: FSMContext):
+    description = message.text.strip()
+    
+    if len(description) > 1000:
+        await message.answer("❌ Описание слишком длинное (максимум 1000 символов). Попробуйте короче.")
+        return
+    
+    await state.update_data(description=description)
+    await state.set_state(LinkStates.waiting_for_amenities)
+    
+    # Список доступных удобств
+    amenities_list = [
+        {'name': 'wifi', 'icon': 'wifi', 'label': 'Wi-Fi'},
+        {'name': 'breakfast', 'icon': 'utensils', 'label': 'Завтрак'},
+        {'name': 'jacuzzi', 'icon': 'hot-tub', 'label': 'Джакузи'},
+        {'name': 'tv', 'icon': 'tv', 'label': 'Smart TV'},
+        {'name': 'ac', 'icon': 'snowflake', 'label': 'Кондиционер'},
+        {'name': 'parking', 'icon': 'parking', 'label': 'Парковка'},
+        {'name': 'pool', 'icon': 'swimming-pool', 'label': 'Бассейн'},
+        {'name': 'gym', 'icon': 'dumbbell', 'label': 'Тренажерный зал'},
+        {'name': 'spa', 'icon': 'spa', 'label': 'СПА'},
+        {'name': 'bar', 'icon': 'cocktail', 'label': 'Бар'},
+        {'name': 'restaurant', 'icon': 'utensils', 'label': 'Ресторан'},
+        {'name': 'roomService', 'icon': 'concierge-bell', 'label': 'Обслуживание'},
+        {'name': 'safe', 'icon': 'lock', 'label': 'Сейф'},
+        {'name': 'minibar', 'icon': 'wine-bottle', 'label': 'Мини-бар'},
+        {'name': 'balcony', 'icon': 'door-open', 'label': 'Балкон'},
+        {'name': 'view', 'icon': 'mountain', 'label': 'Вид на город'}
+    ]
+    
+    # Получаем уже выбранные удобства
+    user_data = await state.get_data()
+    selected_amenities = user_data.get('selected_amenities', [])
+    
+    # Формируем клавиатуру с кнопками
+    keyboard = []
+    row = []
+    for amenity in amenities_list:
+        is_selected = amenity['name'] in selected_amenities
+        button_text = f"{'✅' if is_selected else '⬜'} {amenity['label']}"
+        callback_data = f"toggle_amenity:{amenity['name']}"
+        row.append(InlineKeyboardButton(text=button_text, callback_data=callback_data))
+        
+        if len(row) == 2:
+            keyboard.append(row)
+            row = []
+    
+    if row:
+        keyboard.append(row)
+    
+    keyboard.append([InlineKeyboardButton(text="✅ Готово", callback_data="amenities_done")])
+    keyboard.append([InlineKeyboardButton(text="◀️ Назад", callback_data="back_to_description")])
+    
+    selected_text = f"Выбрано: {len(selected_amenities)}" if selected_amenities else "Выбрано: 0"
+    
+    await message.answer(
+        f"🛎️ <b>Шаг 6 из 7:</b> Выберите удобства\n\n"
+        f"{selected_text}\n\n"
+        "Нажмите на удобство чтобы выбрать/снять",
+        parse_mode="HTML",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard)
+    )
+
+# Кнопка "Пропустить" для описания
+@dp.callback_query(F.data == "skip_description")
+async def skip_description_handler(callback: types.CallbackQuery, state: FSMContext):
+    await state.update_data(description=None)
+    await state.set_state(LinkStates.waiting_for_amenities)
+    
+    # Список доступных удобств
+    amenities_list = [
+        {'name': 'wifi', 'icon': 'wifi', 'label': 'Wi-Fi'},
+        {'name': 'breakfast', 'icon': 'utensils', 'label': 'Завтрак'},
+        {'name': 'jacuzzi', 'icon': 'hot-tub', 'label': 'Джакузи'},
+        {'name': 'tv', 'icon': 'tv', 'label': 'Smart TV'},
+        {'name': 'ac', 'icon': 'snowflake', 'label': 'Кондиционер'},
+        {'name': 'parking', 'icon': 'parking', 'label': 'Парковка'},
+        {'name': 'pool', 'icon': 'swimming-pool', 'label': 'Бассейн'},
+        {'name': 'gym', 'icon': 'dumbbell', 'label': 'Тренажерный зал'},
+        {'name': 'spa', 'icon': 'spa', 'label': 'СПА'},
+        {'name': 'bar', 'icon': 'cocktail', 'label': 'Бар'},
+        {'name': 'restaurant', 'icon': 'utensils', 'label': 'Ресторан'},
+        {'name': 'roomService', 'icon': 'concierge-bell', 'label': 'Обслуживание'},
+        {'name': 'safe', 'icon': 'lock', 'label': 'Сейф'},
+        {'name': 'minibar', 'icon': 'wine-bottle', 'label': 'Мини-бар'},
+        {'name': 'balcony', 'icon': 'door-open', 'label': 'Балкон'},
+        {'name': 'view', 'icon': 'mountain', 'label': 'Вид на город'}
+    ]
+    
+    user_data = await state.get_data()
+    selected_amenities = user_data.get('selected_amenities', [])
+    
+    keyboard = []
+    row = []
+    for amenity in amenities_list:
+        is_selected = amenity['name'] in selected_amenities
+        button_text = f"{'✅' if is_selected else '⬜'} {amenity['label']}"
+        callback_data = f"toggle_amenity:{amenity['name']}"
+        row.append(InlineKeyboardButton(text=button_text, callback_data=callback_data))
+        
+        if len(row) == 2:
+            keyboard.append(row)
+            row = []
+    
+    if row:
+        keyboard.append(row)
+    
+    keyboard.append([InlineKeyboardButton(text="✅ Готово", callback_data="amenities_done")])
+    keyboard.append([InlineKeyboardButton(text="◀️ Назад", callback_data="back_to_description")])
+    
+    selected_text = f"Выбрано: {len(selected_amenities)}" if selected_amenities else "Выбрано: 0"
+    
+    await callback.message.edit_text(
+        f"🛎️ <b>Шаг 6 из 7:</b> Выберите удобства\n\n"
+        f"{selected_text}\n\n"
+        "Нажмите на удобство чтобы выбрать/снять",
+        parse_mode="HTML",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard)
+    )
+    await callback.answer()
+
+# Обработчик переключения удобств
+@dp.callback_query(F.data.startswith("toggle_amenity:"))
+async def toggle_amenity_handler(callback: types.CallbackQuery, state: FSMContext):
+    amenity_name = callback.data.split(":")[1]
+    
+    user_data = await state.get_data()
+    selected_amenities = user_data.get('selected_amenities', [])
+    
+    if amenity_name in selected_amenities:
+        selected_amenities.remove(amenity_name)
+    else:
+        selected_amenities.append(amenity_name)
+    
+    await state.update_data(selected_amenities=selected_amenities)
+    
+    # Обновляем клавиатуру
+    amenities_list = [
+        {'name': 'wifi', 'icon': 'wifi', 'label': 'Wi-Fi'},
+        {'name': 'breakfast', 'icon': 'utensils', 'label': 'Завтрак'},
+        {'name': 'jacuzzi', 'icon': 'hot-tub', 'label': 'Джакузи'},
+        {'name': 'tv', 'icon': 'tv', 'label': 'Smart TV'},
+        {'name': 'ac', 'icon': 'snowflake', 'label': 'Кондиционер'},
+        {'name': 'parking', 'icon': 'parking', 'label': 'Парковка'},
+        {'name': 'pool', 'icon': 'swimming-pool', 'label': 'Бассейн'},
+        {'name': 'gym', 'icon': 'dumbbell', 'label': 'Тренажерный зал'},
+        {'name': 'spa', 'icon': 'spa', 'label': 'СПА'},
+        {'name': 'bar', 'icon': 'cocktail', 'label': 'Бар'},
+        {'name': 'restaurant', 'icon': 'utensils', 'label': 'Ресторан'},
+        {'name': 'roomService', 'icon': 'concierge-bell', 'label': 'Обслуживание'},
+        {'name': 'safe', 'icon': 'lock', 'label': 'Сейф'},
+        {'name': 'minibar', 'icon': 'wine-bottle', 'label': 'Мини-бар'},
+        {'name': 'balcony', 'icon': 'door-open', 'label': 'Балкон'},
+        {'name': 'view', 'icon': 'mountain', 'label': 'Вид на город'}
+    ]
+    
+    keyboard = []
+    row = []
+    for amenity in amenities_list:
+        is_selected = amenity['name'] in selected_amenities
+        button_text = f"{'✅' if is_selected else '⬜'} {amenity['label']}"
+        callback_data = f"toggle_amenity:{amenity['name']}"
+        row.append(InlineKeyboardButton(text=button_text, callback_data=callback_data))
+        
+        if len(row) == 2:
+            keyboard.append(row)
+            row = []
+    
+    if row:
+        keyboard.append(row)
+    
+    keyboard.append([InlineKeyboardButton(text="✅ Готово", callback_data="amenities_done")])
+    keyboard.append([InlineKeyboardButton(text="◀️ Назад", callback_data="back_to_description")])
+    
+    selected_text = f"Выбрано: {len(selected_amenities)}"
+    
+    await callback.message.edit_text(
+        f"🛎️ <b>Шаг 6 из 7:</b> Выберите удобства\n\n"
+        f"{selected_text}\n\n"
+        "Нажмите на удобство чтобы выбрать/снять",
+        parse_mode="HTML",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard)
+    )
+    await callback.answer()
+
+# Кнопка "Готово" для удобств
+@dp.callback_query(F.data == "amenities_done")
+async def amenities_done_handler(callback: types.CallbackQuery, state: FSMContext):
+    user_data = await state.get_data()
+    selected_amenities = user_data.get('selected_amenities', [])
+    
+    # Преобразуем в формат для БД (массив объектов с name и icon)
+    amenities_list_map = {
+        'wifi': {'name': 'wifi', 'icon': 'wifi'},
+        'breakfast': {'name': 'breakfast', 'icon': 'utensils'},
+        'jacuzzi': {'name': 'jacuzzi', 'icon': 'hot-tub'},
+        'tv': {'name': 'tv', 'icon': 'tv'},
+        'ac': {'name': 'ac', 'icon': 'snowflake'},
+        'parking': {'name': 'parking', 'icon': 'parking'},
+        'pool': {'name': 'pool', 'icon': 'swimming-pool'},
+        'gym': {'name': 'gym', 'icon': 'dumbbell'},
+        'spa': {'name': 'spa', 'icon': 'spa'},
+        'bar': {'name': 'bar', 'icon': 'cocktail'},
+        'restaurant': {'name': 'restaurant', 'icon': 'utensils'},
+        'roomService': {'name': 'roomService', 'icon': 'concierge-bell'},
+        'safe': {'name': 'safe', 'icon': 'lock'},
+        'minibar': {'name': 'minibar', 'icon': 'wine-bottle'},
+        'balcony': {'name': 'balcony', 'icon': 'door-open'},
+        'view': {'name': 'view', 'icon': 'mountain'}
+    }
+    
+    amenities = [amenities_list_map[name] for name in selected_amenities if name in amenities_list_map]
+    
+    await state.update_data(amenities=amenities)
     await state.set_state(LinkStates.confirmation)
     
     # Показываем подтверждение
@@ -2614,11 +2877,13 @@ async def process_photos_complete(message: types.Message, state: FSMContext):
         f"🏷️ <b>Название:</b> {user_data['link_name']}\n"
         f"💰 <b>Цена:</b> {user_data['price']} PLN/ночь\n"
         f"📍 <b>Локация:</b> {user_data['location']}\n"
-        f"🖼️ <b>Фото:</b> {len(photos)} шт.\n\n"
+        f"🖼️ <b>Фото:</b> {len(user_data.get('images', []))} шт.\n"
+        f"📝 <b>Описание:</b> {'Есть' if user_data.get('description') else 'Стандартное'}\n"
+        f"🛎️ <b>Удобства:</b> {len(amenities)} шт.\n\n"
         "Всё верно?"
     )
     
-    await message.answer(
+    await callback.message.edit_text(
         confirmation_text,
         parse_mode="HTML",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
@@ -2626,11 +2891,88 @@ async def process_photos_complete(message: types.Message, state: FSMContext):
                 InlineKeyboardButton(text="✅ Создать", callback_data="confirm_link"),
                 InlineKeyboardButton(text="🔄 Заполнить заново", callback_data="restart_link")
             ],
+            [InlineKeyboardButton(text="◀️ Назад", callback_data="back_to_amenities")]
+        ])
+    )
+    await callback.answer()
+
+# Кнопки "Назад" между шагами
+@dp.callback_query(F.data == "back_to_description")
+async def back_to_description(callback: types.CallbackQuery, state: FSMContext):
+    await state.set_state(LinkStates.waiting_for_description)
+    user_data = await state.get_data()
+    photos = user_data.get('images', [])
+    
+    await callback.message.edit_text(
+        "📝 <b>Шаг 5 из 7:</b> Введите описание номера\n\n"
+        "<i>Пример:</i>\n"
+        "<code>Просторный номер премиум-класса с панорамным видом на город. "
+        "В номере есть king-size кровать, рабочая зона, современная ванная комната с джакузи. "
+        "Идеально подходит для романтического отдыха или деловой поездки.</code>\n\n"
+        "💡 <i>Можете оставить пустым для стандартного описания</i>",
+        parse_mode="HTML",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="➡️ Пропустить", callback_data="skip_description")],
             [InlineKeyboardButton(text="◀️ Назад", callback_data="back_to_photos")]
         ])
     )
+    await callback.answer()
 
-# Кнопки "Назад" между шагами
+@dp.callback_query(F.data == "back_to_amenities")
+async def back_to_amenities(callback: types.CallbackQuery, state: FSMContext):
+    await state.set_state(LinkStates.waiting_for_amenities)
+    
+    amenities_list = [
+        {'name': 'wifi', 'icon': 'wifi', 'label': 'Wi-Fi'},
+        {'name': 'breakfast', 'icon': 'utensils', 'label': 'Завтрак'},
+        {'name': 'jacuzzi', 'icon': 'hot-tub', 'label': 'Джакузи'},
+        {'name': 'tv', 'icon': 'tv', 'label': 'Smart TV'},
+        {'name': 'ac', 'icon': 'snowflake', 'label': 'Кондиционер'},
+        {'name': 'parking', 'icon': 'parking', 'label': 'Парковка'},
+        {'name': 'pool', 'icon': 'swimming-pool', 'label': 'Бассейн'},
+        {'name': 'gym', 'icon': 'dumbbell', 'label': 'Тренажерный зал'},
+        {'name': 'spa', 'icon': 'spa', 'label': 'СПА'},
+        {'name': 'bar', 'icon': 'cocktail', 'label': 'Бар'},
+        {'name': 'restaurant', 'icon': 'utensils', 'label': 'Ресторан'},
+        {'name': 'roomService', 'icon': 'concierge-bell', 'label': 'Обслуживание'},
+        {'name': 'safe', 'icon': 'lock', 'label': 'Сейф'},
+        {'name': 'minibar', 'icon': 'wine-bottle', 'label': 'Мини-бар'},
+        {'name': 'balcony', 'icon': 'door-open', 'label': 'Балкон'},
+        {'name': 'view', 'icon': 'mountain', 'label': 'Вид на город'}
+    ]
+    
+    user_data = await state.get_data()
+    selected_amenities = user_data.get('selected_amenities', [])
+    
+    keyboard = []
+    row = []
+    for amenity in amenities_list:
+        is_selected = amenity['name'] in selected_amenities
+        button_text = f"{'✅' if is_selected else '⬜'} {amenity['label']}"
+        callback_data = f"toggle_amenity:{amenity['name']}"
+        row.append(InlineKeyboardButton(text=button_text, callback_data=callback_data))
+        
+        if len(row) == 2:
+            keyboard.append(row)
+            row = []
+    
+    if row:
+        keyboard.append(row)
+    
+    keyboard.append([InlineKeyboardButton(text="✅ Готово", callback_data="amenities_done")])
+    keyboard.append([InlineKeyboardButton(text="◀️ Назад", callback_data="back_to_description")])
+    
+    selected_text = f"Выбрано: {len(selected_amenities)}"
+    
+    await callback.message.edit_text(
+        f"🛎️ <b>Шаг 6 из 7:</b> Выберите удобства\n\n"
+        f"{selected_text}\n\n"
+        "Нажмите на удобство чтобы выбрать/снять",
+        parse_mode="HTML",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard)
+    )
+    await callback.answer()
+
 @dp.callback_query(F.data == "back_to_name")
 async def back_to_name(callback: types.CallbackQuery, state: FSMContext):
     await state.set_state(LinkStates.waiting_for_name)
@@ -2711,7 +3053,9 @@ async def confirm_link_creation(callback: types.CallbackQuery, state: FSMContext
         price=user_data['price'],
         location=user_data['location'],
         images=user_data['images'],
-        link_code=link_code
+        link_code=link_code,
+        description=user_data.get('description'),
+        amenities=user_data.get('amenities', [])
     )
     
     if success:
@@ -2722,7 +3066,9 @@ async def confirm_link_creation(callback: types.CallbackQuery, state: FSMContext
             f"🏷️ <b>Название:</b> {user_data['link_name']}\n"
             f"💰 <b>Цена:</b> {user_data['price']} PLN/ночь\n"
             f"📍 <b>Локация:</b> {user_data['location']}\n"
-            f"🖼️ <b>Фото:</b> {len(user_data['images'])} шт.\n\n"
+            f"🖼️ <b>Фото:</b> {len(user_data['images'])} шт.\n"
+            f"📝 <b>Описание:</b> {'Есть' if user_data.get('description') else 'Стандартное'}\n"
+            f"🛎️ <b>Удобства:</b> {len(user_data.get('amenities', []))} шт.\n\n"
             f"🌐 <b>Ваша ссылка:</b>\n<code>{full_url}</code>\n\n"
             "Отправьте эту ссылку клиенту для бронирования.",
             parse_mode="HTML",
@@ -2759,4 +3105,3 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
-
